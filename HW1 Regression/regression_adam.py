@@ -1,6 +1,74 @@
 import pandas as pd
 import numpy as np
 import math
+
+def featTransform(x):
+	x = np.concatenate((x, x[:,9].reshape(-1,1) **2), axis = 1)
+	#x = np.delete(x, 15, 1)
+	x = np.concatenate((x, x**2), axis = 1)
+	x = np.concatenate((x, x[:, :x.shape[1] - 1] * x[:, 1:x.shape[1]]), axis = 1)
+	x = np.concatenate((x, x**3), axis = 1)
+	x = np.concatenate((x, x**4), axis = 1)
+	return x
+def computeCost(x, y, theta):
+	return np.sum((np.dot(x , theta) - y)**2) / x.shape[0]
+#training
+def fitAdam(x_train, y_train,theta , lr=0.001, num_iter=10000, beta1=0.1, beta2=0.7):
+	eps = 1e-7
+	mt = np.zeros([x_train.shape[1], 1])
+	vt = np.zeros([x_train.shape[1], 1])
+	for cnt in range(num_iter):
+
+		hx = np.matmul(x_train, theta)
+		grad = (2* np.matmul(-x_train.T, y_train - hx)) / x_train.shape[0]
+		
+		#momentum
+		mt = beta1 * mt + (1 - beta1) * grad
+		vt = beta2 * vt + (1 - beta2) * (grad ** 2)
+		mhat = mt / (1 - beta1 ** num_iter)
+		vhat = vt / (1 - beta2 ** num_iter)
+
+		#update weights
+		theta = theta - lr * mhat / (np.sqrt(vhat) + eps)
+
+		J.append(computeCost(x_train, y_train, theta))
+
+		print("Cost:", computeCost(x_train, y_train, theta))
+
+	return theta
+
+def SGD(x_train, y_train, theta ,sample = 5000, lr=1e-3, num_iter=10000, beta1=0.9, beta2=0.99):
+	eps = 1e-7
+	mt = np.zeros([x_train.shape[1], 1])
+	vt = np.zeros([x_train.shape[1], 1])
+	
+	for cnt in range(num_iter):
+		picked = np.random.choice(x_train.shape[0], sample)
+		
+		x = x_train[picked]
+		y = y_train[picked]
+		
+		hx = np.matmul(x, theta)
+		
+		grad = 2 * np.matmul(-x.T, (y-hx)) / sample
+		#print('grad ', grad)
+		"""
+		#momentum
+		mt = beta1 * mt + (1 - beta1) * grad
+		vt = beta2 * vt + (1 - beta2) * (grad ** 2)
+		mhat = mt / (1 - beta1 ** num_iter)
+		vhat = vt / (1 - beta2 ** num_iter)
+		
+		#update weights
+		theta = theta - lr * mhat / (np.sqrt(vhat) + eps)
+		"""
+		theta = theta - lr * grad
+
+		J.append(computeCost(x, y, theta))
+
+		print("Cost:", computeCost(x, y, theta))
+
+	return theta
 #load data
 df = pd.read_csv('train.csv', encoding='big5')
 
@@ -34,12 +102,8 @@ for mth in range(12):
 
 
 #add more features
-x = np.concatenate((x, x[:,9].reshape(-1,1) **2), axis = 1)
-#x = np.delete(x, 15, 1)
-#x = np.concatenate((x, x**2), axis = 1)
-#x = np.concatenate((x, x[:, :x.shape[1] - 1] * x[:, 1:x.shape[1]]), axis = 1)
-#x = np.concatenate((x, x**3), axis = 1)
-#x = np.concatenate((x, x**4), axis = 1)
+x = featTransform(x)
+
 
 #normalize features
 x_mean = np.mean(x, axis=0)
@@ -53,20 +117,11 @@ for ins in range(x.shape[0]):
 
 
 
-def computeCost(x, y, theta):
-	return np.sum((np.dot(x , theta) - y)**2) / x.shape[0]
-#training
-def trainLinearReg(x, y):
-	theta = np.ones([x.shape[1], 1])
-	lr = 0.001
-	num_iter = 500
-	for cnt in range(num_iter):
-		hx = np.dot(x, theta) - y
-		theta = theta - (lr / x.shape[0]) * np.sum(x * hx, axis = 0).reshape(-1,1)
-	return theta
 
 #add bias term
 x = np.concatenate((np.ones([x.shape[0],1]), x), axis = 1)
+print(x.shape)
+np.random.shuffle(x)
 x_train = x[: math.floor(len(x) * 0.8)] 
 x_val = x[math.floor(len(x) * 0.8):]
 
@@ -96,13 +151,13 @@ if plotCurve:
 	train_cost = []
 	val_cost = []
 	num_iter = 2000
-	print("start plotting learning curve...")
+	
 	for cnt in range(1,num_iter):
 		
 		tmp_xTrain = x_train[:cnt]
 		tmp_yTrain = y_train[:cnt]
 
-		theta = trainLinearReg(tmp_xTrain, tmp_yTrain)
+		theta = fitAdam(tmp_xTrain, tmp_yTrain, theta)
 		
 		cost = computeCost(tmp_xTrain, tmp_yTrain, theta)
 		train_cost.append(cost)
@@ -110,7 +165,7 @@ if plotCurve:
 		val_cost.append(valCost)
 
 		print("Round {}, val loss: {}".format(cnt, valCost))
-
+	print("start plotting learning curve...")
 	xAxis = [x for x in range(num_iter-1)]
 
 	plt.plot(xAxis, train_cost, color = 'blue', label="Train")
@@ -120,30 +175,11 @@ if plotCurve:
 	plt.legend()
 	plt.show()
 else:
-	lr = 0.003
-	num_iter = 10000
-	eps = 1e-7
-	beta1 = 0.7
-	beta2 = 0.8
-	mt = np.zeros([x_train.shape[1], 1])
-	vt = np.zeros([x_train.shape[1], 1])
-	for cnt in range(num_iter):
+	eigvals = np.linalg.eigvals(np.matmul(x_train.T, x_train))
+	print(eigvals)
+	print(abs(np.max(eigvals)))
 
-
-
-
-		hx = np.dot(x_train, theta) - y_train
-		grad = np.sum(x_train * hx * 2, axis = 0).reshape(-1,1)
-		#momentum
-		mt = beta1 * mt + (1 - beta1) * grad
-		vt = beta2 * vt + (1 - beta2) * (grad ** 2)
-		mhat = mt / (1 - beta1 ** num_iter)
-		vhat = vt / (1 - beta2 ** num_iter)
-		theta = theta - lr * mhat / (np.sqrt(vhat) + eps)
-
-		J.append(computeCost(x_train, y_train, theta))
-
-		print("Cost:", computeCost(x_train, y_train, theta))
+	theta = fitAdam(x_train, y_train, theta)
 
 	print("cost of validation:", computeCost(x_val, y_val, theta))
 	
@@ -165,7 +201,7 @@ else:
 	for id in range(rawData.shape[0] // 18):
 		testData[id] = rawData[id * 18: (id + 1) * 18, :].reshape(1,-1)
 
-	testData = np.concatenate((testData, testData[:,9].reshape(-1,1) **2), axis = 1)
+	testData = featTransform(testData)
 	#testData = np.delete(testData, 15, 1)
 	#testData = testData[:, 1:]
 	#testData = np.concatenate((testData, testData**2), axis = 1)
